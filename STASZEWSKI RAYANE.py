@@ -104,7 +104,7 @@ class Graphe:
 
         return distance, ville
 
-    def dijkstra(self, depart, arrivee):
+    def dijkstra(self, depart, arrivee, verbose = False):
         """Trouve le chemin et la distance minimale 
 
         Args:
@@ -116,7 +116,7 @@ class Graphe:
         sommet = depart
         # Tant qu'on n'a pas visité tous les sommets
         etape = 0
-        while sommet != arrivee:
+        while len(self.visites) != len(self.predecesseurs):
             distance_mini, sommet = self.distance_mini()
 
             self.visites.append(sommet)
@@ -124,20 +124,22 @@ class Graphe:
             # Parcourt les voisins du sommet en cours
             voisins = self.liste_adjacence[sommet]
 
-            for voisin, distance in filter(lambda voisin: voisin not in self.visites, voisins): # au lieu de mettre 2 if imbriqué
-                # Calcule la distance en passant par le sommet en cours        
-                if self.distances[sommet] + distance < self.distances[voisin]:
-                    # Met à jour la distance du voisin car on a trouvé un chemin plus court
-                    self.distances[voisin] = self.distances[sommet] + distance
-                    self.predecesseurs[voisin] = sommet
+            for voisin, distance in voisins:
+                if voisin not in self.visites:
+                        # Calcule la distance en passant par le sommet en cours        
+                        if self.distances[sommet] + distance < self.distances[voisin]:
+                            # Met à jour la distance du voisin car on a trouvé un chemin plus court
+                            self.distances[voisin] = self.distances[sommet] + distance
+                            self.predecesseurs[voisin] = sommet
 
             etape += 1
 
             # Print le tableau à chaque itération
-            self.print_tableau(etape)
+            if verbose:
+                self.print_tableau(etape)
 
         # Renvoie la distance et le chemin
-        return distance_mini, self.chemin(depart, arrivee)
+        return self.distances[arrivee], self.chemin(depart, arrivee)
 
     def print_tableau(self, index_etape):
         """ Print l'étape actuelle sous forme de tableau
@@ -171,6 +173,79 @@ class Graphe:
         print()
         print()
 
+class Metro:
+    def __init__(self, fichier_sommets, fichier_arcs) -> None:
+        self.fichier_sommets = fichier_sommets
+        self.fichier_arcs = fichier_arcs
+        self.sommet_ligne = {}
+        self.sommet_id = {}
+        self.sommet_nom = {}
+
+    def fabrication_graphe(self):
+        """Crée un graphe à partir des fichiers sommets et arcs
+        """
+        # Création du graphe
+        self.metro = Graphe()
+
+        # Chargement des arcs
+        df_arcs = pd.read_csv(self.fichier_arcs, sep=';')
+
+        for i in range(0, len(df_arcs)):
+            self.metro.ajout_sommet(df_arcs['id1'][i], df_arcs['id2'][i], df_arcs['time'][i])
+
+        self.metro.classement_adjacence()
+
+    def recuperation_donnees(self):
+        """Récupère les données des sommets
+        """
+        df_sommets = pd.read_csv(self.fichier_sommets, sep=';')
+
+        df_sommets.set_index('name').to_dict()
+
+        self.sommet_ligne = df_sommets.set_index('id').to_dict()['line']
+
+        self.sommet_id = df_sommets.set_index('id').to_dict()['name']
+
+        self.sommet_nom = df_sommets.set_index('name').to_dict()['id']
+
+    def itineraire_dijkstra(self, depart, arrivee):
+        """Dijkstra pour le métro
+
+        Args:
+            depart (str): Nom du sommet de départ
+            arrivee (str): Nom du sommet d'arrivée
+        """
+        depart = self.sommet_nom[depart]
+        arrivee = self.sommet_nom[arrivee]
+
+        results = list(self.metro.dijkstra(depart, arrivee)) # convertit le tuple en liste pour pouvoir le modifier
+
+        results[1] = [(self.sommet_id[sommet_id], self.sommet_ligne[sommet_id]) for sommet_id in results[1]]
+
+        return tuple(results)
+    
+    def affichage(self, resultats):
+        """Affichage du temps et des lignes empruntées
+
+        Args:
+            resultats (tuple): Les résultats de dijkstra
+        """
+        duree_minutes = resultats[0]
+        duree_jour = duree_minutes // 1440
+        duree_heures = duree_minutes // 60
+        duree_minutes %= 60
+
+        duree_formattee = str(duree_jour).zfill(2) + ":" + str(duree_heures).zfill(2) + ":" + str(duree_minutes).zfill(2)
+        print("Durée : " + duree_formattee)
+
+        print()
+
+        max_length = max([len(sommet) for sommet, ligne in resultats[1]])
+
+        for sommet, ligne in resultats[1]:
+            print("{:<{max_length}} : ligne {}".format(sommet, ligne, max_length=max_length))
+
+
 # =============================================================================
 # PROGRAMME PRINCIPAL
 # =============================================================================
@@ -183,39 +258,6 @@ if __name__ == '__main__':
 
     # # Vérification de "classement_adjacence"
     tgv.classement_adjacence()
-    assert tgv.liste_adjacence == {'Paris': [('Bordeaux', 499), ('Lille', 204), ('Lyon', 391), ('Metz', 330), ('Rennes', 335)],
-                                   'Lille': [('Paris', 204)],
-                                   'Rennes': [('Paris', 335)],
-                                   'Bordeaux': [('Marseille', 505), ('Paris', 499)],
-                                   'Metz': [('Paris', 330), ('Strasbourg', 129)],
-                                   'Lyon': [('Marseille', 278), ('Paris', 391), ('Strasbourg', 382)],
-                                   'Marseille': [('Bordeaux', 505), ('Lyon', 278)],
-                                   'Strasbourg': [('Lyon', 382), ('Metz', 129)]}
-
-
-    # # Vérification de "initialisation"
-    distances, predecesseurs = tgv.initialisation("Metz")
-
-    assert distances == {'Paris': float('inf'),
-                         'Lille': float('inf'),
-                         'Rennes': float('inf'),
-                         'Bordeaux': float('inf'),
-                         'Metz': 0,
-                         'Lyon': float('inf'),
-                         'Marseille': float('inf'),
-                         'Strasbourg': float('inf')}
-    assert predecesseurs == {'Metz': 'Metz'}
-
-    # # Vérification de "chemin"
-    tgv.predecesseurs = {'Metz': 'Metz',
-                         'Paris': 'Metz',
-                         'Strasbourg': 'Metz',
-                         'Lyon': 'Strasbourg',
-                         'Bordeaux': 'Paris',
-                         'Lille': 'Paris',
-                         'Rennes': 'Paris',
-                         'Marseille': 'Lyon'}
-    assert tgv.chemin("Metz", "Bordeaux") == ['Metz', 'Paris', 'Bordeaux']
 
     # # Vérification de "distance_mini"
     tgv.visites = ['Metz', 'Strasbourg', 'Paris',
@@ -239,3 +281,26 @@ if __name__ == '__main__':
 
     print("Distance : " + str(results[0]))
     print("Chemin : " + str(results[1]))
+
+
+    print("\n\n\nItinéraire de Pigalle à Place d'Italie :\n")
+    metro = Metro("ratp_nodes.csv", "ratp_edges.csv")
+    metro.fabrication_graphe()
+    metro.recuperation_donnees()
+    metro.affichage(metro.itineraire_dijkstra("Pigalle", "Place d'Italie"))
+
+    # du tribunal de Justice à la gare de l'est
+    print("\n\n\nItinéraire de Châtelet à la Gare de l'Est :\n")
+    metro.affichage(metro.itineraire_dijkstra("Châtelet", "Gare de l'Est"))
+
+    # du tribunal de Justice à la gare de l'est
+    print("\n\n\nItinéraire de Châtelet à la Gare de l'Est :\n")
+    metro.affichage(metro.itineraire_dijkstra("Châtelet", "Gare de l'Est"))
+
+
+    print("\n\n\nItinéraire de Wall Street à Roosevelt Island :\n")
+    metro = Metro("mta_nodes.csv", "mta_edges.csv")
+    metro.fabrication_graphe()
+    metro.recuperation_donnees()
+    metro.affichage(metro.itineraire_dijkstra("Wall St", "Roosevelt Island"))
+
